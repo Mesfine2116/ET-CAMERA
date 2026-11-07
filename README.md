@@ -1,0 +1,1 @@
+# Supabase as well as Cloudinary is setub in bruhzemen@gmail.com email.
