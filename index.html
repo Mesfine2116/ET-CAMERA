@@ -2356,7 +2356,7 @@
           <div class="field"><label for="fUser">Username</label><input class="input" id="fUser" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="e.g. abebe.k"></div>
           <div class="field"><label for="fPass">Password</label><div class="pw"><input class="input" id="fPass" type="password" autocomplete="current-password" placeholder="••••••••"><button type="button" id="pwT">Show</button></div></div>
           <div class="field reg"><label for="fPass2">Confirm password</label><input class="input" id="fPass2" type="password" autocomplete="new-password" placeholder="••••••••"></div>
-          ${AUTO_MS() ? `<div class="notice reg">${icon("clock")}<span><b>Approved within ${esc(hoursText())}.</b> An administrator reviews every request. If nobody has reviewed yours after ${esc(hoursText())}, it is approved automatically.</span></div>` : ""}
+          ${AUTO_MS() ? `<div class="notice reg">${icon("clock")}<span><b>Approved within ${esc(hoursText())}.</div>` : ""}
           <div class="alert" id="aErr" hidden></div>
           <button class="btn primary lg block" id="aBtn"></button>
         </form>
@@ -3517,6 +3517,7 @@
                   ? data.deleted_ids
                   : ids,
                 failed: data.cloud_failed || 0,
+                cloudError: data.cloud_error || "",
               };
             if (error) {
               const res = error.context; // the HTTP response, when the function answered
@@ -3551,6 +3552,7 @@
             gone = new Set();
           let failed = 0,
             why = "";
+          let cloudError = "";
           for (let i = 0; i < ids.length; i += 50) {
             const chunk = ids.slice(i, i + 50),
               r = await deleteByIds(chunk);
@@ -3561,8 +3563,15 @@
             }
             r.deleted.forEach((id) => gone.add(id));
             failed += r.failed;
+            if (r.cloudError) cloudError = r.cloudError;
           }
-          if (!gone.size) throw new Error(why || NEED_FN());
+          if (!gone.size)
+            throw new Error(
+              why ||
+                (cloudError
+                  ? `Cloudinary rejected the delete: ${cloudError}. Check that CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET (Edge Functions → Secrets) exactly match your Cloudinary account, then try again.`
+                  : NEED_FN()),
+            );
           if (failed)
             toast(
               `${failed} item${failed > 1 ? "s" : ""} could not be removed from Cloudinary and ${failed > 1 ? "were" : "was"} kept. Try again later.`,

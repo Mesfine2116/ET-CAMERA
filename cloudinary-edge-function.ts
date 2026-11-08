@@ -46,11 +46,20 @@ async function sha1(s: string) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
+    console.log("---- cloudinary function: request received ----");
     const cloud = Deno.env.get("CLOUDINARY_CLOUD_NAME");
     const key = Deno.env.get("CLOUDINARY_API_KEY");
     const secret = Deno.env.get("CLOUDINARY_API_SECRET");
-    if (!cloud || !key || !secret)
+    // never log the secret itself — only whether each is present, plus the non-secret values
+    console.log("secrets present:", {
+      cloud_name: cloud || "(missing)",
+      api_key: key ? `set (${key.length} chars)` : "(missing)",
+      api_secret: secret ? `set (${secret.length} chars)` : "(missing)",
+    });
+    if (!cloud || !key || !secret) {
+      console.error("Cloudinary secrets are not configured");
       return json({ error: "Cloudinary secrets are not configured" }, 500);
+    }
 
     const authHeader = req.headers.get("Authorization") ?? "";
     const jwt = authHeader.replace(/^Bearer\s+/i, "");
@@ -64,18 +73,22 @@ Deno.serve(async (req) => {
 
     const {
       data: { user },
+      error: userErr,
     } = await sb.auth.getUser(jwt);
+    console.log("auth.getUser:", user ? `ok (${user.id})` : "no user", userErr?.message || "");
     if (!user) return json({ error: "Unauthorized" }, 401);
 
-    const { data: me } = await sb
+    const { data: me, error: meErr } = await sb
       .from("profiles")
       .select("username, role, status")
       .eq("id", user.id)
       .single();
+    console.log("profile lookup:", me, meErr?.message || "");
     if (!me || me.status !== "approved")
       return json({ error: "Account not approved" }, 403);
 
     const body = await req.json().catch(() => ({}));
+    console.log("action:", body?.action, "payload:", body);
 
     // ---- signed upload ----
     if (body.action === "sign") {
@@ -86,6 +99,7 @@ Deno.serve(async (req) => {
       const signature = await sha1(
         `folder=${folder}&tags=${tags}&timestamp=${timestamp}${secret}`,
       );
+      console.log("sign: issued signature for folder", folder, "timestamp", timestamp);
       return json({
         signature,
         timestamp,
@@ -98,10 +112,14 @@ Deno.serve(async (req) => {
 
     // ---- delete ----
     if (body.action === "delete") {
-      if (me.role !== "admin") return json({ error: "Not allowed" }, 403);
+      if (me.role !== "admin") {
+        console.warn("delete blocked: caller is not an admin", me.username, me.role);
+        return json({ error: "Not allowed" }, 403);
+      }
       const ids: string[] = (
         Array.isArray(body.photo_ids) ? body.photo_ids : []
       ).slice(0, 100);
+      console.log("delete requested for", ids.length, "id(s):", ids);
       if (!ids.length) return json({ ok: true, deleted: 0, cloud_failed: 0 });
 
       // RLS: admins can read every row, including the ones in the Trash
@@ -109,10 +127,17 @@ Deno.serve(async (req) => {
         .from("photos")
         .select("id, public_id, url")
         .in("id", ids);
+      console.log(
+        "rows found:",
+        rows?.length ?? 0,
+        error?.message || "",
+        JSON.stringify(rows),
+      );
       if (error) return json({ error: error.message }, 400);
       if (!rows?.length) return json({ ok: true, deleted: 0, cloud_failed: 0 });
 
       let failed = 0;
+      let cloudError = ""; // first Cloudinary-reported reason a destroy call failed, if any
       const removed: string[] = []; // ids whose Cloudinary file is gone
       await Promise.all(
         rows.map(async (r) => {
@@ -130,19 +155,45 @@ Deno.serve(async (req) => {
           const rt = String(r.url ?? "").includes("/video/upload/")
             ? "video"
             : "image";
+          console.log("destroying", rt, r.public_id, "via", `${cloud}/${rt}/destroy`);
           try {
             const res = await fetch(
               `https://api.cloudinary.com/v1_1/${cloud}/${rt}/destroy`,
               { method: "POST", body: fd },
             );
             const j = await res.json().catch(() => ({}));
-            if (res.ok && ["ok", "not found"].includes(j.result))
+            console.log(
+              "cloudinary response for",
+              r.public_id,
+              "status",
+              res.status,
+              "body",
+              JSON.stringify(j),
+            );
+            if (res.ok && ["ok", "not found"].includes(j.result)) {
               removed.push(r.id);
-            else failed++;
-          } catch {
+            } else {
+              failed++;
+              const reason = j?.error?.message || `HTTP ${res.status}`;
+              // logged so it shows up in Supabase → Edge Functions → cloudinary → Logs
+              console.error("Cloudinary destroy failed", r.public_id, reason);
+              if (!cloudError) cloudError = reason;
+            }
+          } catch (e) {
             failed++;
+            console.error("Cloudinary destroy request errored", r.public_id, e);
+            if (!cloudError) cloudError = String((e as Error)?.message ?? e);
           }
         }),
+      );
+
+      console.log(
+        "delete summary: removed=",
+        removed.length,
+        "failed=",
+        failed,
+        "cloudError=",
+        cloudError,
       );
 
       if (removed.length) {
@@ -150,6 +201,7 @@ Deno.serve(async (req) => {
           .from("photos")
           .delete()
           .in("id", removed);
+        console.log("db delete of removed rows:", delErr?.message || "ok");
         if (delErr) return json({ error: delErr.message }, 400);
       }
       return json({
@@ -157,11 +209,14 @@ Deno.serve(async (req) => {
         deleted: removed.length,
         deleted_ids: removed,
         cloud_failed: failed,
+        cloud_error: cloudError || undefined,
       });
     }
 
+    console.warn("unknown action:", body?.action);
     return json({ error: "Unknown action" }, 400);
   } catch (e) {
+    console.error("unhandled error in cloudinary function:", e);
     return json({ error: String((e as Error)?.message ?? e) }, 500);
   }
 });
