@@ -1073,6 +1073,37 @@
         color: var(--muted);
         font-size: 13px;
       }
+      .dot.mute {
+        background: var(--muted);
+      }
+      .tgroup {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 26px 0 10px;
+      }
+      .tgroup:first-child {
+        margin-top: 6px;
+      }
+      .tgroup .avatar {
+        width: 36px;
+        height: 36px;
+        font-size: 13px;
+      }
+      .tgroup div {
+        min-width: 0;
+      }
+      .tgroup b,
+      .tgroup div small {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .tgroup small {
+        color: var(--muted);
+        font-size: 13px;
+      }
 
       /* ---------- members / account ---------- */
       .stats {
@@ -2127,6 +2158,7 @@
           alert:
             '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
           thirds: '<path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>',
+          undo: '<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>',
           refresh:
             '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
           full: '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
@@ -2241,6 +2273,8 @@
           pending: 0,
           warnedCloud: false,
           profileErr: false,
+          trash: 0,
+          noTrash: false,
         };
         let timers = { gate: null, tick: null };
 
@@ -2303,11 +2337,11 @@
       <div class="brand">${logo()}<span>${esc(APP)}</span></div>
       <div class="hero-copy">
         <h2>Capture on site.<br>Nothing stays on the device.</h2>
-        <p>Photos go straight from the camera to your private vault, never to the tablet's gallery.</p>
+        <p>Photos go straight from the camera to your library, never to the tablet's gallery.</p>
         <ul class="hero-list">
-          <li>${icon("shield")}<span>A private library for every member</span></li>
+          <li>${icon("shield")}<span>Your own library for photos and videos</span></li>
           <li>${icon("camera")}<span>Full-quality photos and videos, one tap to download</span></li>
-          <li>${icon("users")}<span>Admin-approved access with full control</span></li>
+          <li>${icon("key")}<span>Sign in with your username and password</span></li>
         </ul>
       </div>
       <small style="opacity:.7">© ${new Date().getFullYear()} ${esc(APP)}</small>
@@ -2327,7 +2361,7 @@
           <button class="btn primary lg block" id="aBtn"></button>
         </form>
         <p class="fine" id="aFine"></p>
-       
+        
       </div>
     </section>
   </div>`;
@@ -2794,6 +2828,24 @@
               } catch {
                 done("warn", "Could not check.");
               }
+
+              done = add("Delete handling is installed");
+              try {
+                const r = await fetch(`${U}/rest/v1/rpc/trash_photos`, {
+                    method: "POST",
+                    headers: { ...H, "Content-Type": "application/json" },
+                    body: JSON.stringify({ p_ids: [] }),
+                  }),
+                  j = await json(r);
+                j.code === "PGRST202"
+                  ? done(
+                      "bad",
+                      "Not installed. Deleting will not work until you run trash.sql once in the SQL Editor.",
+                    )
+                  : done("ok", "Installed.");
+              } catch {
+                done("warn", "Could not check.");
+              }
             }
 
             done = add("Cloudinary cloud name and preset");
@@ -2852,13 +2904,13 @@
               r.status === 404
                 ? done(
                     needFn ? "bad" : "warn",
-                    "Not deployed. Deleting a photo then removes it from the app only, not from Cloudinary.",
+                    "Not deployed. Permanent deletes need it (see cloudinary-edge-function.ts).",
                   )
                 : done("ok", "Deployed.");
             } catch {
               done(
                 needFn ? "bad" : "warn",
-                "Not reachable (probably not deployed). Deleting a photo then removes it from the app only, not from Cloudinary.",
+                "Not reachable (probably not deployed). Permanent deletes need it (see cloudinary-edge-function.ts).",
               );
             }
 
@@ -3056,6 +3108,7 @@
         const NAV = {
           gallery: { ic: "image", label: "My media", short: "Media" },
           library: { ic: "grid", label: "All media", short: "All" },
+          trash: { ic: "trash", label: "Trash", short: "Trash" },
           members: { ic: "users", label: "Members", short: "Members" },
           account: { ic: "user", label: "Account", short: "Account" },
         };
@@ -3063,13 +3116,17 @@
           const p = S.profile,
             admin = p.role === "admin";
           const side = admin
-            ? ["gallery", "library", "members", "account"]
+            ? ["gallery", "library", "trash", "members", "account"]
             : ["gallery", "account"];
           const tabs = admin
-            ? ["gallery", "library", "camera", "members", "account"]
+            ? ["gallery", "library", "camera", "trash", "members", "account"]
             : ["gallery", "camera", "account"];
           const badge = (t) =>
-            t === "members" ? '<em class="dot" data-pend hidden></em>' : "";
+            t === "members"
+              ? '<em class="dot" data-pend hidden></em>'
+              : t === "trash"
+                ? '<em class="dot mute" data-trash hidden></em>'
+                : "";
           $("#app").innerHTML = `<div class="shell">
     <aside class="side">
       <div class="brand">${logo()}<span>${esc(APP)}</span></div>
@@ -3094,7 +3151,7 @@
       .join("")}</nav>
   </div>`;
           updateBadges();
-          if (!admin && (S.view === "library" || S.view === "members"))
+          if (!admin && ["library", "members", "trash"].includes(S.view))
             S.view = "gallery";
           go(S.view);
         }
@@ -3102,6 +3159,10 @@
           $$("[data-pend]").forEach((e) => {
             e.textContent = S.pending;
             e.hidden = !S.pending;
+          });
+          $$("[data-trash]").forEach((e) => {
+            e.textContent = S.trash > 99 ? "99+" : S.trash;
+            e.hidden = !S.trash;
           });
         }
         function go(view) {
@@ -3115,11 +3176,30 @@
             S.filterUser = "";
             showGallery("mine");
           } else if (view === "library") showGallery("all");
+          else if (view === "trash") showGallery("trash");
           else if (view === "members") showMembers();
           else showAccount();
         }
+        async function refreshTrash() {
+          if (S.profile?.role !== "admin" || S.noTrash) return;
+          const { count, error } = await sb
+            .from("photos")
+            .select("id", { count: "exact", head: true })
+            .not("deleted_at", "is", null);
+          if (error) {
+            if (
+              error.code === "42703" ||
+              /deleted_at/.test(error.message || "")
+            )
+              S.noTrash = true;
+            return;
+          }
+          S.trash = count || 0;
+          updateBadges();
+        }
         async function refreshPending() {
           if (S.profile?.role !== "admin") return;
+          refreshTrash();
           const { count, error } = await sb
             .from("profiles")
             .select("id", { count: "exact", head: true })
@@ -3183,14 +3263,17 @@
           S.photos = [];
           S.total = 0;
           S.hasMore = false;
-          const all = scope === "all";
+          const all = scope === "all",
+            tr = scope === "trash";
           $("#view").innerHTML = `
-    <div class="ph"><div><h1>${all ? "All media" : "My media"}</h1><p class="sub" id="gSub">&nbsp;</p></div>
+    <div class="ph"><div><h1>${tr ? "Trash" : all ? "All media" : "My media"}</h1><p class="sub" id="gSub">&nbsp;</p></div>
       <div class="ph-actions">
         ${all ? `<select id="userFilter" class="input sel" aria-label="Filter by member"><option value="">Everyone</option></select>` : ""}
+        ${tr ? `<button class="btn" data-act="trash-refresh">${icon("refresh")}<span class="lbl">Refresh</span></button>` : ""}
         <button class="btn" data-act="sel-mode">${icon("sel")}<span>Select</span></button>
-        <button class="btn primary hide-sm" data-act="camera">${icon("camera")} Camera</button>
+        ${tr ? "" : `<button class="btn primary hide-sm" data-act="camera">${icon("camera")} Camera</button>`}
       </div></div>
+    ${tr ? `<div class="notice">${icon("trash")}<span>Photos and videos that members deleted. <b>Restore</b> puts an item back in the member's library. <b>Delete permanently</b> removes it from the app and from Cloudinary.</span></div>` : ""}
     <div id="selbar"></div><div id="gBody"></div>`;
           if (all) {
             if (!S.members.length) await loadMembers();
@@ -3224,22 +3307,50 @@
           }
           S.loading = true;
           renderGalleryBody();
-          const from = reset ? 0 : S.photos.length;
-          let q = sb
-            .from("photos")
-            .select(
-              S.scope === "all" ? "*, profiles(username, full_name)" : "*",
-              { count: "exact" },
-            )
-            .order("created_at", { ascending: false })
-            .range(from, from + CONFIG.PAGE_SIZE - 1);
-          if (S.scope === "mine") q = q.eq("user_id", S.profile.id);
-          else if (S.filterUser) q = q.eq("user_id", S.filterUser);
-          const { data, error, count } = await q;
+          const from = reset ? 0 : S.photos.length,
+            tr = S.scope === "trash";
+          const build = () => {
+            let q = sb
+              .from("photos")
+              .select(
+                S.scope === "mine" ? "*" : "*, profiles(username, full_name)",
+                { count: "exact" },
+              );
+            if (tr)
+              q = q
+                .not("deleted_at", "is", null)
+                .order("deleted_at", { ascending: false });
+            // the Trash: only admins can read these rows
+            else {
+              if (!S.noTrash) q = q.is("deleted_at", null);
+              q = q.order("created_at", { ascending: false });
+            }
+            q = q.range(from, from + CONFIG.PAGE_SIZE - 1);
+            if (S.scope === "mine") q = q.eq("user_id", S.profile.id);
+            else if (S.scope === "all" && S.filterUser)
+              q = q.eq("user_id", S.filterUser);
+            return q;
+          };
+          let { data, error, count } = await build();
+          // database not upgraded yet (no "deleted_at" column): carry on as before
+          if (
+            error &&
+            !tr &&
+            !S.noTrash &&
+            (error.code === "42703" || /deleted_at/.test(error.message || ""))
+          ) {
+            S.noTrash = true;
+            ({ data, error, count } = await build());
+          }
           if (id !== S.loadId) return;
           S.loading = false;
           if (error) {
-            toast("Could not load photos: " + error.message, "error");
+            toast(
+              tr && /deleted_at/.test(error.message || "")
+                ? "The Trash is not set up yet. Run trash.sql once in Supabase → SQL Editor."
+                : "Could not load photos: " + error.message,
+              "error",
+            );
             renderGalleryBody();
             return;
           }
@@ -3263,6 +3374,11 @@
             b.innerHTML = `<div class="grid">${'<div class="sk"></div>'.repeat(12)}</div>`;
             return;
           }
+          const tr = S.scope === "trash";
+          if (!S.photos.length && tr) {
+            b.innerHTML = `<div class="empty"><div class="ring">${icon("trash")}</div><h3>Trash is empty</h3><p>Photos and videos that members delete will show up here.</p></div>`;
+            return;
+          }
           if (!S.photos.length) {
             const all = S.scope === "all";
             b.innerHTML = `<div class="empty"><div class="ring">${icon("image")}</div><h3>Nothing here yet</h3>
@@ -3270,30 +3386,47 @@
       ${all ? "" : `<button class="btn primary lg" data-act="camera">${icon("camera")} Open camera</button>`}</div>`;
             return;
           }
-          const groups = new Map();
-          S.photos.forEach((p) => {
-            const k = new Date(p.created_at).toDateString();
-            if (!groups.has(k)) groups.set(k, []);
-            groups.get(k).push(p);
-          });
           const all = S.scope === "all";
+          const tile = (
+            p,
+          ) => `<button class="tile${S.selected.has(p.id) ? " sel" : ""}" data-act="tile" data-id="${p.id}" aria-label="${isVideo(p) ? "Video" : "Photo"} from ${esc(fmtDate(p.created_at))}">
+      <img src="${esc(thumb(p))}" loading="lazy" decoding="async" alt="" draggable="false"><span class="chk">${icon("check")}</span>${isVideo(p) ? `<span class="vbadge">${icon("play")}</span>` : ""}
+      ${all ? `<span class="own">@${esc(p.profiles?.username || "?")}</span>` : tr && p.deleted_at ? `<span class="own">Deleted ${esc(ago(p.deleted_at))}</span>` : ""}</button>`;
           b.className = S.selecting ? "selecting" : "";
-          b.innerHTML =
-            [...groups.values()]
+          let body;
+          if (tr) {
+            // the Trash is grouped by member
+            const mem = new Map();
+            S.photos.forEach((p) => {
+              if (!mem.has(p.user_id)) mem.set(p.user_id, []);
+              mem.get(p.user_id).push(p);
+            });
+            body = [...mem.entries()]
+              .map(([uid, list]) => {
+                const pr = list[0].profiles || {};
+                return `
+    <div class="tgroup"><span class="avatar">${esc(initials(pr.full_name || pr.username))}</span><div><b>${esc(pr.full_name || pr.username || "Unknown member")}</b><small>@${esc(pr.username || "?")}</small></div><span class="grow"></span>
+      <small>${list.length} item${list.length === 1 ? "" : "s"}</small><button class="btn sm" data-act="trash-pick" data-id="${uid}">Select all</button></div>
+    <div class="grid">${list.map(tile).join("")}</div>`;
+              })
+              .join("");
+          } else {
+            const groups = new Map();
+            S.photos.forEach((p) => {
+              const k = new Date(p.created_at).toDateString();
+              if (!groups.has(k)) groups.set(k, []);
+              groups.get(k).push(p);
+            });
+            body = [...groups.values()]
               .map(
                 (list) => `
     <div class="day">${esc(dayLabel(list[0].created_at))}<small>${list.length}</small></div>
-    <div class="grid">${list
-      .map(
-        (
-          p,
-        ) => `<button class="tile${S.selected.has(p.id) ? " sel" : ""}" data-act="tile" data-id="${p.id}" aria-label="${isVideo(p) ? "Video" : "Photo"} from ${esc(fmtDate(p.created_at))}">
-      <img src="${esc(thumb(p))}" loading="lazy" decoding="async" alt="" draggable="false"><span class="chk">${icon("check")}</span>${isVideo(p) ? `<span class="vbadge">${icon("play")}</span>` : ""}
-      ${all ? `<span class="own">@${esc(p.profiles?.username || "?")}</span>` : ""}</button>`,
-      )
-      .join("")}</div>`,
+    <div class="grid">${list.map(tile).join("")}</div>`,
               )
-              .join("") +
+              .join("");
+          }
+          b.innerHTML =
+            body +
             (S.hasMore
               ? `<div class="more" id="more"><span class="spin"></span></div>`
               : "");
@@ -3336,52 +3469,116 @@
             el.innerHTML = "";
             return;
           }
-          const n = S.selected.size;
+          const n = S.selected.size,
+            tr = S.scope === "trash",
+            dis = n ? "" : "disabled";
           el.innerHTML = `<div class="selbar"><button class="btn icon ghost" data-act="sel-cancel" aria-label="Cancel selection">${icon("x")}</button><strong>${n} selected</strong><span class="grow"></span>
     <button class="btn" data-act="sel-all">${icon("check")}<span class="lbl">Select all</span></button>
-    <button class="btn" data-act="sel-dl" ${n ? "" : "disabled"}>${icon("download")}<span class="lbl">Download</span></button>
-    <button class="btn danger" data-act="sel-del" ${n ? "" : "disabled"}>${icon("trash")}<span class="lbl">Delete</span></button></div>`;
+    <button class="btn" data-act="sel-dl" ${dis} aria-label="Download">${icon("download")}<span class="lbl">Download</span></button>
+    ${tr ? `<button class="btn" data-act="sel-rest" ${dis} aria-label="Restore">${icon("undo")}<span class="lbl">Restore</span></button>` : ""}
+    <button class="btn danger" data-act="sel-del" ${dis} aria-label="${tr ? "Delete permanently" : "Delete"}">${icon("trash")}<span class="lbl">${tr ? "Delete permanently" : "Delete"}</span></button></div>`;
         }
 
-        /* ---- deleting ---- */
+        /* ---- deleting ----
+   A MEMBER's delete only hides the item: it moves to the Trash, which only admins can open, and the Cloudinary file stays.
+   An ADMIN's delete is permanent and also removes the file from Cloudinary (through the Edge Function, which holds the secret). */
+        const isAdmin = () => S.profile?.role === "admin";
+        const NEED_FN = () =>
+          `Could not remove the file from Cloudinary, so nothing was deleted. Deploy the "${CONFIG.EDGE_FUNCTION}" Edge Function (see cloudinary-edge-function.ts) and try again.`;
         async function deleteByIds(ids) {
-          let cloud = false,
-            failed = 0;
+          // admins only. Returns the ids whose Cloudinary file AND database row are gone.
           try {
             const { data, error } = await sb.functions.invoke(
               CONFIG.EDGE_FUNCTION,
               { body: { action: "delete", photo_ids: ids } },
             );
-            if (!error && data?.ok) {
-              cloud = true;
-              failed = data.cloud_failed || 0;
-            }
+            if (!error && data?.ok)
+              return {
+                cloud: true,
+                deleted: Array.isArray(data.deleted_ids)
+                  ? data.deleted_ids
+                  : ids,
+                failed: data.cloud_failed || 0,
+              };
           } catch (e) {
-            /* function not deployed → fall back below */
+            /* function not deployed or not reachable */
           }
-          if (!cloud) {
-            const { error } = await sb.from("photos").delete().in("id", ids);
-            if (error) throw error;
+          return { cloud: false, deleted: [], failed: 0 };
+        }
+        async function purgePhotos(list) {
+          const ids = list.map((p) => p.id),
+            gone = new Set();
+          let failed = 0;
+          for (let i = 0; i < ids.length; i += 50) {
+            const chunk = ids.slice(i, i + 50),
+              r = await deleteByIds(chunk);
+            if (!r.cloud) {
+              failed += ids.length - i;
+              break;
+            }
+            r.deleted.forEach((id) => gone.add(id));
+            failed += r.failed;
           }
-          return { cloud, failed };
+          if (!gone.size) throw new Error(NEED_FN());
+          if (failed)
+            toast(
+              `${failed} item${failed > 1 ? "s" : ""} could not be removed from Cloudinary and ${failed > 1 ? "were" : "was"} kept. Try again later.`,
+              "warn",
+              7000,
+            );
+          return gone;
+        }
+        async function trashForMember(ids) {
+          for (let i = 0; i < ids.length; i += 200) {
+            const { error } = await sb.rpc("trash_photos", {
+              p_ids: ids.slice(i, i + 200),
+            });
+            if (error) {
+              console.warn(error);
+              throw new Error(
+                "Could not delete right now. Please try again later.",
+              );
+            }
+          }
+          return new Set(ids);
         }
         async function removePhotos(list) {
+          // returns how many items were removed
+          const ids = list.map((p) => p.id),
+            adm = isAdmin();
+          const gone = adm
+            ? await purgePhotos(list)
+            : await trashForMember(ids);
+          S.photos = S.photos.filter((p) => !gone.has(p.id));
+          S.total = Math.max(0, S.total - gone.size);
+          gone.forEach((id) => S.selected.delete(id));
+          if (adm) refreshTrash();
+          renderGalleryBody();
+          renderSelbar();
+          return gone.size;
+        }
+        async function restorePhotos(list) {
+          // admin: put items back in their owner's library
           const ids = list.map((p) => p.id);
-          let warn = false;
-          for (let i = 0; i < ids.length; i += 50) {
-            const r = await deleteByIds(ids.slice(i, i + 50));
-            if (!r.cloud || r.failed) warn = true;
+          for (let i = 0; i < ids.length; i += 200) {
+            const { error } = await sb.rpc("admin_restore_photos", {
+              p_ids: ids.slice(i, i + 200),
+            });
+            if (error)
+              throw new Error(
+                error.code === "PGRST202"
+                  ? "Restore is not set up yet. Run trash.sql once in Supabase → SQL Editor."
+                  : "Could not restore: " + error.message,
+              );
           }
           const gone = new Set(ids);
           S.photos = S.photos.filter((p) => !gone.has(p.id));
           S.total = Math.max(0, S.total - ids.length);
           ids.forEach((id) => S.selected.delete(id));
-          if (warn && !S.warnedCloud) {
-            S.warnedCloud = true;
-            toast("Removed", "success", 8000);
-          }
+          refreshTrash();
           renderGalleryBody();
           renderSelbar();
+          return ids.length;
         }
         async function bulkDownload(list) {
           toast(
@@ -3477,7 +3674,8 @@
       <button class="lbtn lb-nav prev" id="lbPrev" data-act="lb-prev" aria-label="Previous">${icon("left")}</button>
       <button class="lbtn lb-nav next" id="lbNext" data-act="lb-next" aria-label="Next">${icon("right")}</button></div>
     <div class="lb-bar"><button class="btn primary" data-act="lb-dl">${icon("download")} Download original</button>
-      <button class="btn danger" data-act="lb-del">${icon("trash")} Delete</button></div>`;
+      <button class="btn" data-act="lb-rest" id="lbRest" hidden>${icon("undo")} Restore</button>
+      <button class="btn danger" data-act="lb-del">${icon("trash")} <span id="lbDelTxt">Delete</span></button></div>`;
           let x0 = 0,
             y0 = 0,
             multi = false;
@@ -3663,9 +3861,14 @@
           if (vd) bits.push("Video");
           if (p.width) bits.push(`${p.width}×${p.height}`);
           if (p.bytes) bits.push(fmtBytes(p.bytes));
-          if (S.scope === "all" && p.profiles)
+          if ((S.scope === "all" || S.scope === "trash") && p.profiles)
             bits.push("@" + p.profiles.username);
+          if (S.scope === "trash" && p.deleted_at)
+            bits.push("Deleted " + fmtDate(p.deleted_at));
           $("#lbSub").textContent = bits.join(" · ");
+          $("#lbRest").hidden = S.scope !== "trash";
+          $("#lbDelTxt").textContent =
+            S.scope === "trash" ? "Delete permanently" : "Delete";
           $("#lbPrev").hidden = LB.i === 0;
           $("#lbNext").hidden = LB.i >= S.photos.length - 1;
           if (LB.i >= S.photos.length - 4 && S.hasMore && !S.loading)
@@ -3678,17 +3881,24 @@
           const p = S.photos[LB.i];
           if (!p) return;
           const what = isVideo(p) ? "video" : "photo";
-          if (
-            !(await confirmBox(
-              `Delete this ${what}?`,
-              "It will be permanently removed and cannot be recovered.",
-              "Delete",
-              true,
-            ))
-          )
-            return;
+          const ok = isAdmin()
+            ? await confirmBox(
+                S.scope === "trash"
+                  ? `Delete this ${what} permanently?`
+                  : `Delete this ${what}?`,
+                "It will be removed for good, including the Cloudinary file. This cannot be undone.",
+                "Delete",
+                true,
+              )
+            : await confirmBox(
+                `Delete this ${what}?`,
+                "It will be removed from your library.",
+                "Delete",
+                true,
+              );
+          if (!ok) return;
           try {
-            await removePhotos([p]);
+            if (!(await removePhotos([p]))) return;
             if (!S.photos.length) lbClose();
             else {
               LB.i = Math.min(LB.i, S.photos.length - 1);
@@ -3696,7 +3906,22 @@
             }
             toast(`${what[0].toUpperCase() + what.slice(1)} deleted`, "ok");
           } catch (e) {
-            toast("Could not delete: " + e.message, "error");
+            toast(e.message, "error");
+          }
+        }
+        async function lbRestore() {
+          const p = S.photos[LB.i];
+          if (!p) return;
+          try {
+            await restorePhotos([p]);
+            if (!S.photos.length) lbClose();
+            else {
+              LB.i = Math.min(LB.i, S.photos.length - 1);
+              lbRender();
+            }
+            toast("Restored", "ok");
+          } catch (e) {
+            toast(e.message, "error");
           }
         }
 
@@ -4843,7 +5068,14 @@
             );
             if (ok) return;
           } else if (act === "m-del") {
-            const n = S.stats[id]?.photo_count || 0;
+            let n = S.stats[id]?.photo_count || 0;
+            {
+              const { count } = await sb
+                .from("photos")
+                .select("id", { count: "exact", head: true })
+                .eq("user_id", id);
+              if (count != null) n = count;
+            } // includes items in the Trash
             if (
               !(await confirmBox(
                 `Delete @${m.username}?`,
@@ -4990,27 +5222,61 @@
             case "sel-del": {
               const list = S.photos.filter((p) => S.selected.has(p.id));
               if (!list.length) break;
-              if (
-                !(await confirmBox(
-                  `Delete ${list.length} photo${list.length > 1 ? "s" : ""}?`,
-                  "They will be permanently removed and cannot be recovered.",
-                  "Delete",
-                  true,
-                ))
-              )
-                break;
+              const c = list.length,
+                pl = c > 1 ? "s" : "";
+              const ok = isAdmin()
+                ? await confirmBox(
+                    S.scope === "trash"
+                      ? `Delete ${c} item${pl} permanently?`
+                      : `Delete ${c} item${pl}?`,
+                    "They will be removed for good, including the Cloudinary files. This cannot be undone.",
+                    "Delete",
+                    true,
+                  )
+                : await confirmBox(
+                    `Delete ${c} item${pl}?`,
+                    "They will be removed from your library.",
+                    "Delete",
+                    true,
+                  );
+              if (!ok) break;
               try {
-                await removePhotos(list);
+                const done = await removePhotos(list);
                 closeSel();
-                toast(
-                  `${list.length} photo${list.length > 1 ? "s" : ""} deleted`,
-                  "ok",
-                );
+                if (done)
+                  toast(`${done} item${done > 1 ? "s" : ""} deleted`, "ok");
               } catch (err) {
-                toast("Could not delete: " + err.message, "error");
+                toast(err.message, "error");
               }
               break;
             }
+            case "sel-rest": {
+              const list = S.photos.filter((p) => S.selected.has(p.id));
+              if (!list.length) break;
+              try {
+                const done = await restorePhotos(list);
+                closeSel();
+                toast(`${done} item${done > 1 ? "s" : ""} restored`, "ok");
+              } catch (err) {
+                toast(err.message, "error");
+              }
+              break;
+            }
+            case "trash-pick": {
+              if (!S.selecting) enterSelect();
+              S.photos
+                .filter((p) => p.user_id === el.dataset.id)
+                .forEach((p) => toggleSel(p.id, true));
+              break;
+            }
+            case "trash-refresh":
+              closeSel();
+              loadPhotos(true);
+              refreshTrash();
+              break;
+            case "lb-rest":
+              lbRestore();
+              break;
             case "lb-close":
               lbClose();
               break;
