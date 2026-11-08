@@ -3485,8 +3485,26 @@
         const isAdmin = () => S.profile?.role === "admin";
         const NEED_FN = () =>
           `Could not remove the file from Cloudinary, so nothing was deleted. Deploy the "${CONFIG.EDGE_FUNCTION}" Edge Function (see cloudinary-edge-function.ts) and try again.`;
+        // Say, in plain words, why a call to the Edge Function failed (so a deployed function is never reported as "not deployed")
+        function fnWhy(status, body) {
+          const fn = CONFIG.EDGE_FUNCTION,
+            msg = body?.error || body?.message || "";
+          if (status === 404) return NEED_FN();
+          if (!status)
+            return `Could not reach the "${fn}" Edge Function. Check the internet connection and try again.`;
+          if (status === 401 && body?.error === "Unauthorized")
+            return "The Edge Function did not accept your sign-in. Sign out, sign in again and try once more.";
+          if (status === 401)
+            return `Supabase blocked the call before it reached the function (401${msg ? ": " + msg : ""}). In Supabase open Edge Functions → ${fn} → Details and turn OFF "Verify JWT with legacy secret", then try again. The function still checks that you are an admin.`;
+          if (status === 403) return "Only an admin can delete permanently.";
+          if (/secrets are not configured/i.test(msg))
+            return "The Edge Function is deployed but has no Cloudinary keys. In Supabase open Edge Functions → Secrets and add CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET.";
+          return `The Edge Function reported a problem (${status}${msg ? ": " + msg : ""}). Nothing was deleted.`;
+        }
         async function deleteByIds(ids) {
           // admins only. Returns the ids whose Cloudinary file AND database row are gone.
+          let status = 0,
+            body = null;
           try {
             const { data, error } = await sb.functions.invoke(
               CONFIG.EDGE_FUNCTION,
@@ -3500,26 +3518,51 @@
                   : ids,
                 failed: data.cloud_failed || 0,
               };
+            if (error) {
+              const res = error.context; // the HTTP response, when the function answered
+              if (res && typeof res.status === "number") {
+                status = res.status;
+                body = await res
+                  .clone()
+                  .json()
+                  .catch(() => null);
+              }
+              console.warn(
+                "Edge Function failed",
+                status,
+                body || error.message,
+              );
+            } else {
+              status = 502;
+              body = { error: "Unexpected reply" };
+            }
           } catch (e) {
-            /* function not deployed or not reachable */
+            console.warn("Edge Function not reachable", e);
           }
-          return { cloud: false, deleted: [], failed: 0 };
+          return {
+            cloud: false,
+            deleted: [],
+            failed: 0,
+            why: fnWhy(status, body),
+          };
         }
         async function purgePhotos(list) {
           const ids = list.map((p) => p.id),
             gone = new Set();
-          let failed = 0;
+          let failed = 0,
+            why = "";
           for (let i = 0; i < ids.length; i += 50) {
             const chunk = ids.slice(i, i + 50),
               r = await deleteByIds(chunk);
             if (!r.cloud) {
               failed += ids.length - i;
+              why = r.why;
               break;
             }
             r.deleted.forEach((id) => gone.add(id));
             failed += r.failed;
           }
-          if (!gone.size) throw new Error(NEED_FN());
+          if (!gone.size) throw new Error(why || NEED_FN());
           if (failed)
             toast(
               `${failed} item${failed > 1 ? "s" : ""} could not be removed from Cloudinary and ${failed > 1 ? "were" : "was"} kept. Try again later.`,
@@ -5092,16 +5135,19 @@
                 .eq("user_id", id)
                 .limit(2000);
               const ids = (data || []).map((r) => r.id);
-              let warn = false;
+              let warn = false,
+                why = "";
               for (let i = 0; i < ids.length; i += 50) {
                 const r = await deleteByIds(ids.slice(i, i + 50));
                 if (!r.cloud || r.failed) warn = true;
+                if (r.why) why = r.why;
               }
               if (warn)
                 toast(
-                  "Their files may remain in Cloudinary until the Edge Function is deployed.",
+                  "Their files may remain in Cloudinary. " +
+                    (why || "Some files could not be removed."),
                   "warn",
-                  7000,
+                  9000,
                 );
             } catch (e) {
               toast("Could not remove their photos: " + e.message, "error");

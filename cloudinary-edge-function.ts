@@ -6,7 +6,11 @@
 // on the server, as a Supabase secret.
 //
 // Deploy (dashboard):  Edge Functions → Deploy a new function → name it exactly "cloudinary"
-//                      → paste this file → Deploy.   (Keep "Verify JWT" ON.)
+//                      → paste this file → Deploy.
+//                      Then open the function's Details and turn OFF "Verify JWT with legacy secret".
+//                      (Newer Supabase projects sign logins with keys that this switch cannot check, so leaving it on
+//                      rejects every real sign-in with a 401. It is safe to turn off: this code verifies the caller itself
+//                      with auth.getUser() below, and only admins may delete.)
 // Secrets:             Edge Functions → Secrets → add
 //                        CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
 //   (or CLI)           supabase secrets set CLOUDINARY_CLOUD_NAME=... CLOUDINARY_API_KEY=... CLOUDINARY_API_SECRET=...
