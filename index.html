@@ -400,7 +400,16 @@
         overflow: hidden;
         color: #fff;
         padding: 44px 52px;
-        background: linear-gradient(140deg, #272370, #4f46e5 55%, #7c3aed);
+        background-image:
+          radial-gradient(
+            circle at 1px 1px,
+            rgba(255, 255, 255, 0.14) 1px,
+            transparent 0
+          ),
+          linear-gradient(140deg, #272370, #4f46e5 55%, #7c3aed);
+        background-size:
+          28px 28px,
+          auto;
         flex-direction: column;
         justify-content: space-between;
       }
@@ -409,19 +418,25 @@
         content: "";
         position: absolute;
         border-radius: 50%;
-        background: rgba(255, 255, 255, 0.07);
+        filter: blur(2px);
       }
       .auth-hero::before {
         width: 520px;
         height: 520px;
         right: -160px;
         top: -120px;
+        background: rgba(255, 255, 255, 0.08);
       }
       .auth-hero::after {
         width: 380px;
         height: 380px;
-        left: -120px;
-        bottom: -140px;
+        left: -140px;
+        bottom: -160px;
+        background: radial-gradient(
+          circle,
+          rgba(167, 139, 250, 0.55),
+          transparent 70%
+        );
       }
       .auth-hero > * {
         position: relative;
@@ -431,8 +446,26 @@
         background: rgba(255, 255, 255, 0.18);
         box-shadow: none;
       }
+      .hero-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 6px 14px 6px 10px;
+        margin-bottom: 20px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        font-size: 12.5px;
+        font-weight: 650;
+        letter-spacing: 0.02em;
+      }
+      .hero-kicker .ic {
+        width: 15px;
+        height: 15px;
+      }
       .hero-copy h2 {
-        font-size: 38px;
+        font-size: 40px;
+        font-weight: 800;
         line-height: 1.12;
         letter-spacing: -0.03em;
         margin-bottom: 16px;
@@ -441,16 +474,17 @@
         font-size: 17px;
         opacity: 0.85;
         max-width: 460px;
+        line-height: 1.55;
       }
       .hero-list {
         list-style: none;
-        margin-top: 28px;
+        margin-top: 30px;
         display: grid;
-        gap: 14px;
+        gap: 15px;
       }
       .hero-list li {
         display: flex;
-        gap: 12px;
+        gap: 13px;
         align-items: center;
         font-weight: 500;
       }
@@ -459,30 +493,79 @@
         width: 40px;
         height: 40px;
         border-radius: 12px;
-        background: rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, 0.14);
+        border: 1px solid rgba(255, 255, 255, 0.12);
       }
       .auth-main {
         display: grid;
         place-items: center;
         padding: calc(24px + var(--safe-t)) 20px calc(24px + var(--safe-b));
+        background: radial-gradient(
+          1100px 560px at 50% -12%,
+          var(--accent-soft),
+          transparent 60%
+        );
       }
       .auth-card {
         width: min(440px, 100%);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        box-shadow: var(--shadow);
+        padding: 34px 30px 30px;
+        animation: authIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      @keyframes authIn {
+        from {
+          opacity: 0;
+          transform: translateY(14px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
       }
       .auth-card .brand {
-        margin-bottom: 28px;
+        margin-bottom: 26px;
       }
       .auth-card h1 {
+        font-size: 27px;
         margin-bottom: 6px;
       }
       .auth-card .seg {
         margin: 22px 0 22px;
+      }
+      .auth-card .seg .ic {
+        width: 16px;
+        height: 16px;
       }
       .auth-card .reg {
         display: none;
       }
       .auth-card[data-mode="register"] .reg {
         display: block;
+      }
+      .auth-card .btn.primary {
+        background: linear-gradient(135deg, var(--accent), var(--accent-hi));
+        box-shadow: 0 10px 26px -10px var(--accent);
+      }
+      .auth-card .btn.primary:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 14px 30px -10px var(--accent);
+      }
+      .ic-field {
+        position: relative;
+      }
+      .ic-field > .ic {
+        position: absolute;
+        left: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--muted);
+        pointer-events: none;
+      }
+      .ic-field .input {
+        padding-left: 42px;
       }
       .fine {
         margin-top: 18px;
@@ -1998,7 +2081,7 @@
   <body>
     <noscript
       ><p style="padding: 24px">
-        SnapVault needs JavaScript enabled.
+
       </p></noscript
     >
     <div id="app"></div>
@@ -2333,35 +2416,22 @@
           closeOverlays();
           $("#app").innerHTML = `
   <div class="auth">
-    <section class="auth-hero">
-      <div class="brand">${logo()}<span>${esc(APP)}</span></div>
-      <div class="hero-copy">
-        <h2>Capture on site.<br>Nothing stays on the device.</h2>
-        <p>Photos go straight from the camera to your library, never to the tablet's gallery.</p>
-        <ul class="hero-list">
-          <li>${icon("shield")}<span>Your own library for photos and videos</span></li>
-          <li>${icon("camera")}<span>Full-quality photos and videos, one tap to download</span></li>
-          <li>${icon("key")}<span>Sign in with your username and password</span></li>
-        </ul>
-      </div>
-      <small style="opacity:.7">© ${new Date().getFullYear()} ${esc(APP)}</small>
-    </section>
+    
     <section class="auth-main">
       <div class="auth-card" data-mode="${mode}" id="authCard">
         <div class="brand">${logo()}<span>${esc(APP)}</span></div>
         <h1 id="aTitle"></h1><p class="sub" id="aSub"></p>
-        <div class="seg" role="tablist"><button type="button" data-m="login">Sign in</button><button type="button" data-m="register">Request access</button></div>
+        <div class="seg" role="tablist"><button type="button" data-m="login">${icon("key")}<span>Sign in</span></button><button type="button" data-m="register">${icon("userplus")}<span>Request access</span></button></div>
         <form id="authForm" novalidate>
-          <div class="field reg"><label for="fName">Full name</label><input class="input" id="fName" autocomplete="name" placeholder="e.g. Abebe Kebede"></div>
-          <div class="field"><label for="fUser">Username</label><input class="input" id="fUser" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="e.g. abebe.k"></div>
-          <div class="field"><label for="fPass">Password</label><div class="pw"><input class="input" id="fPass" type="password" autocomplete="current-password" placeholder="••••••••"><button type="button" id="pwT">Show</button></div></div>
-          <div class="field reg"><label for="fPass2">Confirm password</label><input class="input" id="fPass2" type="password" autocomplete="new-password" placeholder="••••••••"></div>
+          <div class="field reg"><label for="fName">Full name</label><div class="ic-field">${icon("user")}<input class="input" id="fName" autocomplete="name" placeholder="e.g. Abebe Kebede"></div></div>
+          <div class="field"><label for="fUser">Username</label><div class="ic-field">${icon("user")}<input class="input" id="fUser" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="e.g. abebe.k"></div></div>
+          <div class="field"><label for="fPass">Password</label><div class="pw ic-field">${icon("key")}<input class="input" id="fPass" type="password" autocomplete="current-password" placeholder="••••••••"><button type="button" id="pwT">Show</button></div></div>
+          <div class="field reg"><label for="fPass2">Confirm password</label><div class="ic-field">${icon("key")}<input class="input" id="fPass2" type="password" autocomplete="new-password" placeholder="••••••••"></div></div>
           ${AUTO_MS() ? `<div class="notice reg">${icon("clock")}<span><b>Approved within ${esc(hoursText())}.</div>` : ""}
           <div class="alert" id="aErr" hidden></div>
           <button class="btn primary lg block" id="aBtn"></button>
         </form>
         <p class="fine" id="aFine"></p>
-        
       </div>
     </section>
   </div>`;
@@ -2450,16 +2520,14 @@
                 });
                 if (error) throw error;
                 if (!data.session) {
-                  showErr(
-                    'Account created, but Supabase still requires email confirmation. Turn off "Confirm email" (Authentication → Providers → Email).',
-                  );
+                  showErr("Account created");
                   setBusy(false);
                   return;
                 }
                 toast(
                   AUTO_MS()
                     ? `Request sent. You will get access within ${hoursText()}.`
-                    : "Request sent. An administrator will review it.",
+                    : "",
                   "ok",
                 );
               }
